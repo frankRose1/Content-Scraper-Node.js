@@ -7,5 +7,11 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Frank Rose",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.2",
+    "json2csv": "^4.1.6",
+    "request": "^2.87.0",
+    "request-promise": "^4.2.2"
+  }
 }
