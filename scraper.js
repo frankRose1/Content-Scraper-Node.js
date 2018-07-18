@@ -39,6 +39,8 @@ fs.readdir(__dirname, (err, files) => {
 
 
 //rp accepts an options object as input and returns a promise
+// http://shirts4mike.com/shirts.php is the only entry point we can use, must navigate to individual item pages by getting the href
+    const productEndpoints = []; //holds the hrefs for individual items
     const options = {
         url: 'http://shirts4mike.com/shirts.php',
         transform: body => cheerio.load(body)
@@ -46,11 +48,47 @@ fs.readdir(__dirname, (err, files) => {
 
     rp(options)
         .then($ => {
-                //scrape info for 8 t-shirts
-                process.stdout.write('logging data');
-                console.log($);
+            //get the enpoints for the products on the page
+            $('ul.products li a').each( (i, link) => {
+                productEndpoints.push(link.attribs.href);
+            });
+            getProductInfo(productEndpoints);
         })
         .catch(err => console.error(err.message));
+
+const productData = {}; //will hold data about the items scraped
+function getProductInfo(endpoints){
+
+    endpoints.forEach( (endpoint, i) => {
+        const productOptions = {
+            url: `http://shirts4mike.com/${endpoint}`,
+            transform: body => cheerio.load(body)
+        };
+
+        const itemData = {
+            title: '',
+            price: '',
+            imgUrl: '',
+            url: productOptions.url
+        };
+
+        rp(productOptions)
+            .then($ => {
+                //this will be an individual product page
+                //assign values to itemData 
+                    //==> then spread that data in to productData
+                itemData.title = $('div.shirt-details h1').text().substr(4);
+                itemData.price = $('h1 span.price').text();
+                itemData.imgUrl = `http://shirts4mike.com/${$('div.shirt-picture span img').attr('src')}`;
+                //put individual items in to parent object
+                productData[i] = itemData;
+                console.log(productData);
+                console.log('--------------');
+            })
+            .catch(err => console.error(err.message));
+    }); //end loop
+
+}
 
 //Scraping and Saving Data:
     // The scraper should get the price, title, url and image url from the product page and save this information into a CSV file.
