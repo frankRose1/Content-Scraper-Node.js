@@ -64,12 +64,7 @@ function getProductInfo(endpoints){
                 transform: body => cheerio.load(body)
             };
     
-            const itemData = { 
-                "title": '',
-                "price": '',
-                "imgUrl": '',
-                "url": productOptions.url
-            };
+            const itemData = { url: productOptions.url};
     
             rp(productOptions)
                 .then($ => {
@@ -86,7 +81,6 @@ function getProductInfo(endpoints){
                 })
                 .catch(err => console.error(err.message));
         } else {
-            console.log(productData);
             storeData(productData);
         }
     } //end next func
@@ -98,21 +92,39 @@ function getProductInfo(endpoints){
     // The information should be stored in an CSV file that is named for the date it was created, e.g. 2016-11-21.csv.
     // Assume that the the column headers in the CSV need to be in a certain order to be correctly entered into a database. They should be in this order: Title, Price, ImageURL, URL, and Time
     // The CSV file should be saved inside the ‘data’ folder.
-//save the data from the productData to a csv file
+    //If your program is run twice, it should overwrite the data in the CSV file with the updated information.
 function storeData(data){
-    const fields = ['title', 'price', 'imgUrl', 'url'];
-    const json2csvParser = new Json2csvParser({ fields });
-
-    try {
-        const csv = json2csvParser.parse(data);
-        console.log(csv);
-    } catch (err) {
-        console.error(err.message);
-    }
+    const fields = [
+        {
+            label: 'Title',
+            value: 'title'
+        },
+        {
+            label: 'Price',
+            value: 'price'
+        },
+        {
+            label: 'ImageUrl',
+            value: 'imgUrl'
+        },
+        {
+            label: 'URL',
+            value: 'url'
+        }];
+    const json2csvParser = new Json2csvParser({ fields, quote: '' });
+    const csv = json2csvParser.parse(data);
+    const date = new Date();
+    const month = date.getMonth() + 1;
+    const fileCreationDate = `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${date.getDate()}`;
+    //writeFile will replace the file if it already exists
+    fs.writeFile(`data/${fileCreationDate}.csv`, csv, (err) => {
+        if (err) {console.error(err.message);}
+        console.log('Data has been saved to the "data" folder!  👍');
+    });
 }
-
-//If your program is run twice, it should overwrite the data in the CSV file with the updated information.
 
 //If http://shirts4mike.com is down, an error message describing the issue should appear in the console.
     // The error should be human-friendly, such as “There’s been a 404 error. Cannot connect to http://shirts4mike.com.”
     // To test and make sure the error message displays as expected, you can disable the wifi on your computer or device.
+
+//fs.appendFile creates the file if it does not exist, and appends to the file otherwise.
