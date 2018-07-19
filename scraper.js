@@ -64,11 +64,11 @@ async function getProductInfo(endpoints){
     } catch(e) {
         console.log(e);
     }
-    storeData(allProductData);
+    createCSV(allProductData);
 }
 
 //If your program is run twice, it should overwrite the data in the CSV file with the updated information.
-function storeData(data){
+function createCSV(data){
     const fields = [
         {
             label: 'Title',
@@ -92,9 +92,25 @@ function storeData(data){
     const json2csvParser = new Json2csvParser({ fields });
     const csv = json2csvParser.parse(data);
     //writeFile will replace the file if it already exists
-    fs.writeFile(`data/${fileCreationDate}.csv`, csv, (err) => {
-        if (err) {console.error(err.message);}
-        console.log('Data has been saved to the "data" folder! 👍');
+    saveFile(csv);
+}
+
+//if a .csv already exists then we should remove it then create a new one as per project requirements
+async function saveFile(file){
+    await fs.readdir('data', (err, files) =>{
+        if(err) {console.log(err);}
+        files.forEach(f => {
+            if (f.includes('.csv')) {
+                fs.unlink(`data/${f}`, (err) => {
+                    if (err) {console.log(err)};
+                    console.log(`data/${f} was deleted`);
+                });
+            }
+        }) //end loop
+        fs.writeFile(`data/${fileCreationDate}.csv`, file, (err) => {
+            if (err) {console.error(err.message);}
+            console.log('Product data has been saved to the "data" folder! 👍');
+        });
     });
 }
 
