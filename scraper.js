@@ -8,52 +8,57 @@ const url = 'http://shirts4mike.com/shirts.php';
 const date = new Date();
 const month = date.getMonth() + 1;
 const fileCreationDate = `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${date.getDate()}`;
-const options = {
-    url,
-    transform: body => cheerio.load(body)
-}
 
 //scraper checks for a "data" folder and creates it if it doesnt exist
-fs.mkdir('data',  (err) => {
+fs.mkdir('data', (err) => {
     if (err) {
         if (err.code === 'EEXIST') {
-            console.log('Data directory already exists.');
-            return;
+            console.log('Looks like the data directory was already created, great!');
         } else {
-            console.error(err.message);
+            errorLogger(err);
         }
     } else {
-        console.log('Data directory created.');
+        console.log('Data directory has been created!');
     }
 });
 
-rp(options)
-    .then($ => {
+
+// Start on this page, then get the hrefs to the individual products
+async function scrapeEntryPoint(){
+    console.log('Let the scraping begin!🎉');
+    try {
+        const response = await rp(url);
+        const $ = cheerio.load(response);
         const hrefs = [];
         //get the enpoints for the products on the page
         $('ul.products li a').each( (i, link) => {
             hrefs.push(link.attribs.href);
         });
-        getProductInfo(hrefs);
-    })
-    .catch(errorLogger);
+        scrapeProductInfo(hrefs);
+    } catch(err) {
+        errorLogger(err);
+    }
+}
 
-async function getProductInfo(endpoints){
-
+//Get data on the individual products
+async function scrapeProductInfo(endpoints){
     const allProductData = [];
     const productUrlArr = [];
     const promiseArr = [];
+    //store a promise from each endpoint in the promiseArr
     endpoints.forEach(endpoint => {
         const productUrl = `http://shirts4mike.com/${endpoint}`;
         const promise = rp(productUrl);
         promiseArr.push(promise);
         productUrlArr.push(productUrl);
     });
-
+    //scrape each endpoint
     try{
         const response = await Promise.all(promiseArr);
+        process.stdout.write('Lodaing product data');
         response.forEach( (res, i) => {
-            const itemData = {time: fileCreationDate};
+            process.stdout.write('.');
+            const itemData = {time: date.toLocaleTimeString('en-US')};
             const $ = cheerio.load(res);
             itemData.title = $('div.shirt-details h1').text().substr(4);
             itemData.price = $('h1 span.price').text();
@@ -61,13 +66,14 @@ async function getProductInfo(endpoints){
             itemData.url = productUrlArr[i];
             allProductData.push(itemData);
         });
-    } catch(e) {
-        console.log(e);
+        console.log('✅');
+        createCSV(allProductData);
+    } catch(err) {
+        errorLogger(err);
     }
-    createCSV(allProductData);
 }
 
-//If your program is run twice, it should overwrite the data in the CSV file with the updated information.
+//Use the data from scrapeProductInfo function to populate the csv
 function createCSV(data){
     const fields = [
         {
@@ -91,41 +97,59 @@ function createCSV(data){
         }];
     const json2csvParser = new Json2csvParser({ fields });
     const csv = json2csvParser.parse(data);
-    //writeFile will replace the file if it already exists
+
     saveFile(csv);
 }
 
-//if a .csv already exists then we should remove it then create a new one as per project requirements
-async function saveFile(file){
-    await fs.readdir('data', (err, files) =>{
-        if(err) {console.log(err);}
+
+//If a .csv already exists then it should be removed and replaced with new data
+function saveFile(file){
+    fs.readdir('data', (err, files) =>{
+        if (err) {
+            errorLogger(err);
+        }
+
         files.forEach(f => {
             if (f.includes('.csv')) {
                 fs.unlink(`data/${f}`, (err) => {
-                    if (err) {console.log(err)};
-                    console.log(`data/${f} was deleted`);
+                    if (err) {
+                        errorLogger(err);
+                    }
+                    console.log(`Overwriting previous data in "data/${f}"...`);
                 });
             }
         }) //end loop
+
         fs.writeFile(`data/${fileCreationDate}.csv`, file, (err) => {
-            if (err) {console.error(err.message);}
-            console.log('Product data has been saved to the "data" folder! 👍');
+            if (err) {
+                errorLogger(err);
+            }
+            console.log('New product data has been saved to the "data" folder! 👍');
         });
     });
 }
 
-//If http://shirts4mike.com is down, an error message describing the issue should appear in the console.
-    // The error should be human-friendly, such as “There’s been a 404 error. Cannot connect to http://shirts4mike.com.”
-    // To test and make sure the error message displays as expected, you can disable the wifi on your computer or device.
-
-//When an error occurs, log it to a file named scraper-error.log
+//When an error occurs, get information about the error and notifty the user in the console
 function errorLogger(err){
     const timeStamp = new Date();
-    const errorMessage = err;
-    const fileData = `[${timeStamp}] ${errorMessage} \r\n`;
-    console.log(`❌  Oops! There's been an error: ${errorMessage}`);
+    let errorMessage;
+    let fileData;
+
+    if (err.statusCode === 404) {
+        errorMessage = `🚫  There’s been a ${err.statusCode} error. Cannot connect to http://shirts4mike.com.`;
+        console.error(errorMessage);
+    } else {
+        errorMessage = err;
+        console.error('❌  Oops! There\'s been an error.');
+    };
+
+    fileData = `[${timeStamp}] ${errorMessage} \r\n`;
     fs.appendFile('data/scraper-error.log', fileData, (err) =>{
         if (err) {console.error(err.message)};
-        console.log('Error logged to "data/scraper-error.log". ');
+        console.log('Error was logged to "data/scraper-error.log".');
     });
 }
+
+setTimeout( () => {
+    scrapeEntryPoint();  //start scraping!!
+}, 1000);
