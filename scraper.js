@@ -9,7 +9,7 @@ const date = new Date();
 const month = date.getMonth() + 1;
 const fileCreationDate = `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${date.getDate()}`;
 
-//scraper checks for a "data" folder and creates it if it doesnt exist
+//scraper checks for a "data" folder and creates it if it doesn't exist
 fs.mkdir('data', (err) => {
     if (err) {
         if (err.code === 'EEXIST') {
@@ -55,7 +55,7 @@ async function scrapeProductInfo(endpoints){
     //scrape each endpoint
     try{
         const response = await Promise.all(promiseArr);
-        process.stdout.write('Lodaing product data');
+        process.stdout.write('Loading product data');
         response.forEach( (res, i) => {
             process.stdout.write('.');
             const itemData = {time: date.toLocaleTimeString('en-US')};
@@ -136,7 +136,7 @@ function errorLogger(err){
     let fileData;
 
     if (err.statusCode === 404) {
-        errorMessage = `🚫  There’s been a ${err.statusCode} error. Cannot connect to http://shirts4mike.com.`;
+        errorMessage = `🚫  There’s been a ${err.statusCode} error. Can\'t connect to http://shirts4mike.com.`;
         console.error(errorMessage);
     } else {
         errorMessage = err;
