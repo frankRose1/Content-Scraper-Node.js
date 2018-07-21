@@ -1,7 +1,7 @@
 //modules
 const fs = require('fs');
 const cheerio = require('cheerio');
-const rp = require('request-promise');
+const fetch = require('node-fetch');
 const Json2csvParser = require('json2csv').Parser;
 //global declcarations
 const url = 'http://shirts4mike.com/shirts.php';
@@ -27,8 +27,9 @@ fs.mkdir('data', (err) => {
 async function scrapeEntryPoint(){
     console.log('Let the scraping begin!🎉');
     try {
-        const response = await rp(url);
-        const $ = cheerio.load(response);
+        const response = await fetch(url);
+        const body = await response.text();
+        const $ = cheerio.load(body);
         const hrefs = [];
         //get the enpoints for the products on the page
         $('ul.products li a').each( (i, link) => {
@@ -36,6 +37,17 @@ async function scrapeEntryPoint(){
         });
         scrapeProductInfo(hrefs);
     } catch(err) {
+        errorLogger(err);
+    }
+}
+
+//makes request to the specific product page
+async function getProductPage(productUrl){
+    try {
+        const response = await fetch(productUrl);
+        const body = response.text();
+        return body;
+    } catch(err){
         errorLogger(err);
     }
 }
@@ -48,18 +60,18 @@ async function scrapeProductInfo(endpoints){
     //store a promise from each endpoint in the promiseArr
     endpoints.forEach(endpoint => {
         const productUrl = `http://shirts4mike.com/${endpoint}`;
-        const promise = rp(productUrl);
-        promiseArr.push(promise);
+        const data = getProductPage(productUrl);
+        promiseArr.push(data);
         productUrlArr.push(productUrl);
     });
     //scrape each endpoint
     try{
-        const response = await Promise.all(promiseArr);
+        const html = await Promise.all(promiseArr);
         process.stdout.write('Loading product data');
-        response.forEach( (res, i) => {
+        html.forEach( (page, i) => {
             process.stdout.write('.');
             const itemData = {time: date.toLocaleTimeString('en-US')};
-            const $ = cheerio.load(res);
+            const $ = cheerio.load(page);
             itemData.title = $('div.shirt-details h1').text().substr(4);
             itemData.price = $('h1 span.price').text();
             itemData.imgUrl = `http://shirts4mike.com/${$('div.shirt-picture span img').attr('src')}`;
@@ -75,29 +87,13 @@ async function scrapeProductInfo(endpoints){
 
 //Use the data from scrapeProductInfo function to populate the csv
 function createCSV(data){
-    const fields = [
-        {
-            label: 'Title',
-            value: 'title'
-        },
-        {
-            label: 'Price',
-            value: 'price'
-        },
-        {
-            label: 'ImageUrl',
-            value: 'imgUrl'
-        },
-        {
-            label: 'URL',
-            value: 'url'
-        }, {
-            label: 'Time',
-            value: 'time'
-        }];
+    const fields = [{ label: 'Title', value: 'title' },
+                    { label: 'Price', value: 'price' },
+                    { label: 'ImageUrl', value: 'imgUrl' },
+                    { label: 'URL', value: 'url' }, 
+                    { label: 'Time', value: 'time' }];
     const json2csvParser = new Json2csvParser({ fields });
     const csv = json2csvParser.parse(data);
-
     saveFile(csv);
 }
 
