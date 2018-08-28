@@ -1,4 +1,4 @@
-# Content Scraper With Scraper Node.js
+# Content Scraper With Node.js
 A command line app that makes an http request to the product page of an e-commerce site, gets the endpoints for individual items, and makes additional http requests to get specific data about those items. The data is then converted from Json to a csv format and saved to the ```.data``` directory. Any errors encountered while making requests and/or working with the file system are logged in the ```.data``` directory too. 
 
 ## How to use
