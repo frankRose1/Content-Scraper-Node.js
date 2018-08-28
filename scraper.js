@@ -1,151 +1,189 @@
-//modules
+/**
+ *  Content Scraper
+ *    Command line app that scrapes data from an e-commerce website
+ *    npm install to download dependencies
+ *    npm start to start the app
+ */
+
 const fs = require('fs');
+const path = require('path');
 const cheerio = require('cheerio');
-const fetch = require('node-fetch');
+const rp = require('request-promise');
 const Json2csvParser = require('json2csv').Parser;
-//global declcarations
-const url = 'http://shirts4mike.com/shirts.php';
+const entryPoint = 'http://shirts4mike.com/shirts.php';
+const baseDir = path.join(__dirname, '/.data/');
 const date = new Date();
 const month = date.getMonth() + 1;
-const fileCreationDate = `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${date.getDate()}`;
+const fileTitle = `${date.getFullYear()}-${month < 10 ? `0${month}` : month}-${date.getDate()}`;
 
-//scraper checks for a "data" folder and creates it if it doesn't exist
-fs.mkdir('data', (err) => {
-    if (err) {
-        if (err.code === 'EEXIST') {
-            console.log('Looks like the data directory was already created, great!');
+//create the data directory to store the scraped data and error logs
+function createDataDir(){
+    fs.mkdir('.data', (err) => {
+        if (!err) {
+            console.log('\x1b[36m%s\x1b[0m', '.data directory has been created, great!');
+            scrapeEntryPoint();
         } else {
-            errorLogger(err);
-        }
-    } else {
-        console.log('Data directory has been created!');
-    }
-});
-
-
-// Start on this page, then get the hrefs to the individual products
-async function scrapeEntryPoint(){
-    console.log('Let the scraping begin!🎉');
-    try {
-        const response = await fetch(url);
-        const body = await response.text();
-        const $ = cheerio.load(body);
-        const hrefs = [];
-        //get the enpoints for the products on the page
-        $('ul.products li a').each( (i, link) => {
-            hrefs.push(link.attribs.href);
-        });
-        scrapeProductInfo(hrefs);
-    } catch(err) {
-        errorLogger(err);
-    }
-}
-
-//makes request to the specific product page
-async function getProductPage(productUrl){
-    try {
-        const response = await fetch(productUrl);
-        const body = response.text();
-        return body;
-    } catch(err){
-        errorLogger(err);
-    }
-}
-
-//Get data on the individual products
-async function scrapeProductInfo(endpoints){
-    const allProductData = [];
-    const productUrlArr = [];
-    const promiseArr = [];
-    //store a promise from each endpoint in the promiseArr
-    endpoints.forEach(endpoint => {
-        const productUrl = `http://shirts4mike.com/${endpoint}`;
-        const data = getProductPage(productUrl);
-        promiseArr.push(data);
-        productUrlArr.push(productUrl);
-    });
-    //scrape each endpoint
-    try{
-        const html = await Promise.all(promiseArr);
-        process.stdout.write('Loading product data');
-        html.forEach( (page, i) => {
-            process.stdout.write('.');
-            const itemData = {time: date.toLocaleTimeString('en-US')};
-            const $ = cheerio.load(page);
-            itemData.title = $('div.shirt-details h1').text().substr(4);
-            itemData.price = $('h1 span.price').text();
-            itemData.imgUrl = `http://shirts4mike.com/${$('div.shirt-picture span img').attr('src')}`;
-            itemData.url = productUrlArr[i];
-            allProductData.push(itemData);
-        });
-        console.log('✅');
-        createCSV(allProductData);
-    } catch(err) {
-        errorLogger(err);
-    }
-}
-
-//Use the data from scrapeProductInfo function to populate the csv
-function createCSV(data){
-    const fields = [{ label: 'Title', value: 'title' },
-                    { label: 'Price', value: 'price' },
-                    { label: 'ImageUrl', value: 'imgUrl' },
-                    { label: 'URL', value: 'url' }, 
-                    { label: 'Time', value: 'time' }];
-    const json2csvParser = new Json2csvParser({ fields });
-    const csv = json2csvParser.parse(data);
-    saveFile(csv);
-}
-
-
-//If a .csv already exists then it should be removed and replaced with new data
-function saveFile(file){
-    fs.readdir('data', (err, files) =>{
-        if (err) {
-            errorLogger(err);
-        }
-
-        files.forEach(f => {
-            if (f.includes('.csv')) {
-                fs.unlink(`data/${f}`, (err) => {
-                    if (err) {
-                        errorLogger(err);
-                    }
-                    console.log(`Overwriting previous data in "data/${f}"...`);
-                });
+            if (err.code == 'EEXIST') {
+                console.log('\x1b[36m%s\x1b[0m', 'Looks like the .data directory already exists.');
+                scrapeEntryPoint();
+            } else {
+                errorLogger('Error creating the data directory', err);
             }
-        }) //end loop
-
-        fs.writeFile(`data/${fileCreationDate}.csv`, file, (err) => {
-            if (err) {
-                errorLogger(err);
-            }
-            console.log('New product data has been saved to the "data" folder! 👍');
-        });
+        }
     });
 }
 
-//When an error occurs, get information about the error and notifty the user in the console
-function errorLogger(err){
-    const timeStamp = new Date();
-    let errorMessage;
-    let fileData;
-
-    if (err.statusCode === 404) {
-        errorMessage = `🚫  There’s been a ${err.statusCode} error. Can\'t connect to http://shirts4mike.com.`;
-        console.error(errorMessage);
-    } else {
-        errorMessage = err;
-        console.error('❌  Oops! There\'s been an error.');
+function scrapeEntryPoint(){
+    console.log('\x1b[33m%s\x1b[0m', 'Let the scraping begin!🎉');
+    
+    const options = {
+        uri: entryPoint,
+        transform: (body) => cheerio.load(body)
     };
 
-    fileData = `[${timeStamp}] ${errorMessage} \r\n`;
-    fs.appendFile('data/scraper-error.log', fileData, (err) =>{
-        if (err) {console.error(err.message)};
-        console.log('Error was logged to "data/scraper-error.log".');
+    rp(options)
+        .then( $ => {
+            const hrefsContainer = [];
+            const productLinks = $('ul.products li a');
+            productLinks.each( (i, link) => {
+                hrefsContainer.push(link.attribs.href);
+            });
+            scrapeIndividualItems(hrefsContainer);
+        })
+        .catch(err => {
+            errorLogger(`Error scraping data at ${entryPoint}. ${err.message}`);
+        });
+}
+
+async function scrapeIndividualItems(productEndPoints){
+    const productData = []; //store data about all products scraped here
+    const promiseContainer = []; //store the promises to be resolved in one batch
+
+    productEndPoints.forEach(endPoint => {
+        const productOptions = {
+            uri : `http://shirts4mike.com/${endPoint}`,
+            transform: (body) => cheerio.load(body)
+        };
+        //store the promise
+        const promise = rp(productOptions);
+        promiseContainer.push(promise);
+    });
+
+    try {
+        const productsResponse = await Promise.all(promiseContainer);
+        process.stdout.write('Loading product data');
+        productsResponse.forEach( ($, i) => {
+            process.stdout.write(".");
+            const productInfo = {};
+            productInfo.title = $('.shirt-details h1').text().substring(4);
+            productInfo.price = $('.shirt-details .price').text();
+            productInfo.url = `http://shirts4mike.com/${productEndPoints[i]}`;
+            productInfo.imgUrl = `http://shirts4mike.com/${$('.shirt-picture span img').attr('src')}`;
+            productInfo.time = date.toLocaleTimeString('en-US');
+            productData.push(productInfo);
+        });
+    } catch (e) {
+        errorLogger("Error converting Json data to csv");
+    }
+    
+    console.log('✅');
+    convertToCsv(productData);  
+}
+
+//convert the json to csv
+function convertToCsv(data){
+    try {
+        const fields = [
+            { label: 'Title', value: 'title' },
+            { label: 'Price', value: 'price' },
+            { label: 'ImageUrl', value: 'imgUrl' },
+            { label: 'URL', value: 'url' }, 
+            { label: 'Time', value: 'time' }
+        ];
+        const json2csv = new Json2csvParser({fields});
+        const csv = json2csv.parse(data);
+        createNewCsvFile(csv);
+    } catch (e) {
+        errorLogger('Error converting JSON data to csv.');
+    }
+}
+
+function createNewCsvFile(fileData){
+    //create a new file, if it already exists, update it
+    fs.open(`${baseDir}${fileTitle}.csv`, 'wx', (err, fileDescriptor) => {
+        if (!err && fileDescriptor) {
+            //now write the file with the data from "file"
+            fs.writeFile(fileDescriptor, fileData, err => {
+                if (!err) {
+                    //close the file
+                    fs.close(fileDescriptor, err => {
+                        if (!err) {
+                            console.log('\x1b[32m%s\x1b[0m', "Successfully created new csv file!");
+                        } else {
+                            cerrorLogger("Error closing new csv file", err.code);
+                        }
+                    });
+                } else {
+                    errorLogger("Error writing to file", err.code);
+                }
+            });
+        } else {
+            if (err.code == 'EEXIST') {
+                //when data is scraped multiple times a day, update the file
+                updateExistingCsv(fileData);
+            } else {
+                errorLogger('Error saving new csv file from: '+fileTitle);
+            }
+        }
     });
 }
 
-setTimeout( () => {
-    scrapeEntryPoint();  //start scraping!!
-}, 1000);
+function updateExistingCsv(fileData){
+    //open existing file for updating, "r+" will error if the file doesnt exist
+    fs.open(`${baseDir}${fileTitle}.csv`, "r+", (err, fileDescriptor) => {
+        if (!err && fileDescriptor) {
+
+            fs.truncate(fileDescriptor, err => {
+                if (!err) {
+
+                    fs.writeFile(fileDescriptor, fileData, err => {
+                        if (!err) {
+
+                            fs.close(fileDescriptor, err => {
+                                if (!err) {
+                                    console.log('\x1b[32m%s\x1b[0m', 'Successfully updated existing csv file!');
+                                } else {
+                                    errorLogger('Error updating existing csv file.', err.code);
+                                }
+                            });
+
+                        } else {
+                            errorLogger("Error writing to existing csv file.", err.code);
+                        }
+                    });
+
+                } else {
+                    errorLogger("Error Truncating existing file", err.code);
+                }
+            });
+
+        } else {
+            errorLogger("Error opening existing csv file", err.code);
+        }
+    });
+}
+
+function errorLogger(errorMsg){
+    //append data to an error log, creating it if it doesnt exist yet
+    const fileData = `${errorMsg} \n`;
+    fs.appendFile(`${baseDir}errors.log`, fileData, 'utf-8', err => {
+        if (!err) {
+            console.log('\x1b[31m%s\x1b[0m', 'An error was logged to ".data/errors.log".');
+        } else {
+            console.error('Error logging to ".data/errors.log".');
+        }
+    });
+}
+
+//start the app
+createDataDir();
